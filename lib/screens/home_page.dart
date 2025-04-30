@@ -6,7 +6,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -27,14 +26,6 @@ class _HomePageState extends State<HomePage> {
     _fetchLocation();
   }
   
-  // String _getSeasonFromMonth(int month) {
-  //   if (month >= 3 && month <= 5) return 'spring';
-  //   if (month >= 6 && month <= 8) return 'summer';
-  //   if (month >= 9 && month <= 11) return 'fall';
-  //   return 'winter';
-  // }
- 
-
   Future<Position> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -54,9 +45,7 @@ class _HomePageState extends State<HomePage> {
     }
     return await Geolocator.getCurrentPosition();
   }
-
-
-
+  
   Future<Map<String, String>> _fetchWeather(double lat, double lon) async {
   const apiKey = '899cd84f06039b04b5ab060934889315';
   final url = Uri.parse(
@@ -69,70 +58,112 @@ class _HomePageState extends State<HomePage> {
     final description = data['weather'][0]['description'];
     final temp = data['main']['temp'];
     final windSpeed = data['wind']['speed'];
+    final windTag = _getWindConditionTag(windSpeed);
+
+    String simplified = '';
+      if (description.contains('cloud')) {
+        simplified = 'cloudy';
+      } else if (description.contains('rain')) {
+        simplified = 'rain';
+      } else if (description.contains('clear')) {
+        simplified = 'clear';
+      } else {
+        simplified = description; 
+      }
+
     final weatherString =
         'Weather: $description, Temp: ${temp.toString()}°F, Wind: ${windSpeed.toString()} mph';
 
     return {
-      'description': description,
+      'description': '$simplified $windTag',
       'weather': weatherString,
+      'windTag': windTag,
     };
-  } else {
-    throw Exception('Failed to fetch weather');
-  }
-}
 
-
-String _getCurrentSeason() {
-  final now = DateTime.now();
-  final month = now.month;
-
-  if (month >= 3 && month <= 5) {
-    return 'Spring';
-  } else if (month >= 6 && month <= 8) {
-    return 'Summer';
-  } else if (month >= 9 && month <= 11) {
-    return 'Fall';
-  } else {
-    return 'Winter';
-  }
-}
-
-Future<List<String>> _getRecommendedLures(String weatherDescription) async {
-  final currentSeason = _getCurrentSeason().toLowerCase();
-  final descriptionWords = weatherDescription.toLowerCase().split(' ');
-
-  final snapshot = await FirebaseFirestore.instance.collection('Lures').get();
-
-  List<String> matchingLures = [];
-
-  for (var doc in snapshot.docs) {
-    final data = doc.data();
-
-    final List<dynamic> conditionsList = data['idealConditions'] ?? [];
-    final List<dynamic> seasonList = data['idealSeason'] ?? [];
-
-    final conditionMatches = conditionsList.any((condition) {
-      final lowerCondition = condition.toString().toLowerCase();
-      return descriptionWords.any((word) => lowerCondition.contains(word));
-    });
-
-    final seasonMatches = seasonList
-        .map((s) => s.toString().toLowerCase())
-        .contains(currentSeason);
-
-    if (conditionMatches && seasonMatches) {
-      matchingLures.add(data['name']);
+    } else {
+      throw Exception('Failed to fetch weather');
     }
-
-    print('Checking lure: ${data['name']}');
-    print('Conditions: $conditionsList');
-    print('Seasons: $seasonList');
-    print('Condition match: $conditionMatches, Season match: $seasonMatches');
   }
 
-  return matchingLures;
-}
 
+  String _getWindConditionTag(double windSpeed) {
+    if (windSpeed < 5) {
+      return 'low wind';
+    } else if (windSpeed < 15) {
+      return 'moderate wind';
+    } else {
+      return 'windy';
+    }
+  }
+
+  String _getTimeOfDayLabel() {
+    final now = DateTime.now();
+    final hour = now.hour;
+
+    if (hour >= 5 && hour < 8) {
+      return 'Dawn';
+    } else if (hour >= 8 && hour < 17) {
+      return 'Mid Day';
+    } else if (hour >= 17 && hour < 20) {
+      return 'Dusk';
+    } else {
+      return 'Night';
+    }
+  }
+
+  String _getCurrentSeason() {
+    final now = DateTime.now();
+    final month = now.month;
+
+    if (month >= 3 && month <= 5) {
+      return 'Spring';
+    } else if (month >= 6 && month <= 8) {
+      return 'Summer';
+    } else if (month >= 9 && month <= 11) {
+      return 'Fall';
+    } else {
+      return 'Winter';
+    }
+  }
+
+  String _simplifyWeatherDescription(String description) {
+    final lower = description.toLowerCase();
+    if (lower.contains('cloud')) return 'cloudy';
+    if (lower.contains('clear')) return 'clear';
+    if (lower.contains('rain')) return 'rain';
+    if (lower.contains('snow')) return 'snow';
+    return lower;
+  }
+
+  Future<List<String>> _getRecommendedLures(String rawWeatherDescription, String windTag) async {
+    final currentSeason = _getCurrentSeason().toLowerCase();
+    final timeOfDay = _getTimeOfDayLabel().toLowerCase();
+
+    final simplifiedWeather = _simplifyWeatherDescription(rawWeatherDescription).toLowerCase();
+
+    final snapshot = await FirebaseFirestore.instance.collection('Lures').get();
+
+    List<String> matchingLures = [];
+
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+
+      final List<dynamic> conditionsList = data['idealConditions'] ?? [];
+      final List<dynamic> seasonList = data['idealSeason'] ?? [];
+
+      final lowerConditions = conditionsList.map((c) => c.toString().toLowerCase()).toList();
+      final lowerSeasons = seasonList.map((s) => s.toString().toLowerCase()).toList();
+
+      final timeMatch = lowerConditions.contains(timeOfDay);
+      final weatherOrWindMatch = lowerConditions.contains(simplifiedWeather) || lowerConditions.contains(windTag.toLowerCase());
+      final seasonMatches = lowerSeasons.contains(currentSeason);
+
+      if (timeMatch && weatherOrWindMatch && seasonMatches) {
+        matchingLures.add(data['name']);
+      }
+    }
+    return matchingLures;
+  }
 
 
 
@@ -152,7 +183,8 @@ Future<List<String>> _getRecommendedLures(String weatherDescription) async {
     final weatherInfo = weatherData['weather']!;
     final description = weatherData['description']!;
 
-    final recommendedLures = await _getRecommendedLures(description);
+    final recommendedLures = await _getRecommendedLures(description, _getWindConditionTag(double.parse(weatherData['weather']!.split("Wind: ")[1].split(" ")[0])));
+
 
     if (user != null) {
       await FirebaseFirestore.instance.collection('users').doc(user?.uid).set(
@@ -182,18 +214,94 @@ Future<List<String>> _getRecommendedLures(String weatherDescription) async {
   }
 }
   
-    Widget _recommendedLuresWidget() {
+  Widget _recommendedLuresWidget() {
   if (_recommendedLures.isEmpty) {
-    return const Text("No lure recommendations found for current conditions.");
+    return const Center(
+      child: Text("No lure recommendations found for current conditions."),
+    );
   }
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      const Text("Recommended Lures:", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-      ..._recommendedLures.map((lure) => Text(lure)).toList(),
-    ],
+
+  return Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          "Recommended Lures:",
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        ..._recommendedLures.map((lureName) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(lureName),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () => _showLureInfo(lureName),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  child: const Text('Info', style: TextStyle(fontSize: 14)),
+                ),
+              ],
+            ),
+          );
+        })
+      ],
+    ),
   );
 }
+
+Future<void> _showLureInfo(String lureName) async {
+  try {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('Lures')
+        .where('name', isEqualTo: lureName)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isNotEmpty) {
+      final data = snapshot.docs.first.data();
+      final literature = data['literature'] ?? 'No information available.';
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(lureName),
+          content: Text(literature),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      _showErrorDialog('No information found for this lure.');
+    }
+  } catch (e) {
+    _showErrorDialog('Failed to fetch lure info: $e');
+  }
+}
+
+void _showErrorDialog(String message) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Error'),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}
+
 
 
   Future<void> signOut() async {
