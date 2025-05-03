@@ -45,7 +45,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _title() {
     return const Text(
-      "Fish Forecast",
+      "Fish Forecast: Largemouth Bass Guide",
       style: TextStyle(
         fontSize: 32,
         fontWeight: FontWeight.bold,

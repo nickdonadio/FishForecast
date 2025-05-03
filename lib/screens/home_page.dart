@@ -264,12 +264,23 @@ Future<void> _showLureInfo(String lureName) async {
     if (snapshot.docs.isNotEmpty) {
       final data = snapshot.docs.first.data();
       final literature = data['literature'] ?? 'No information available.';
+      final imagePath = data['image'] ?? '';
 
       showDialog(
         context: context,
         builder: (context) => AlertDialog(
           title: Text(lureName),
-          content: Text(literature),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (imagePath != null)
+                Image.asset(
+                  'lurePics/$imagePath',
+                ),
+              const SizedBox(height: 10),
+              Text(literature),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -285,6 +296,7 @@ Future<void> _showLureInfo(String lureName) async {
     _showErrorDialog('Failed to fetch lure info: $e');
   }
 }
+
 
 void _showErrorDialog(String message) {
   showDialog(
@@ -302,14 +314,12 @@ void _showErrorDialog(String message) {
   );
 }
 
-
-
   Future<void> signOut() async {
     await Auth().signOut();
   }
 
   Widget _title() {
-    return const Text("Fish Forecast");
+    return const Text("Fish Forecast: Largemouth Bass Guide");
   }
 
   Widget _userUid() {
